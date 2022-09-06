@@ -11,22 +11,32 @@ extern __inline unsigned long long __attribute__((__gnu_inline__, __always_inlin
 }
 */
 
+#define KiB4 4096
+#define KiB16 16384
+#define KiB64 65536
+#define KiB256 262144
+#define MiB1 1048576
+#define MiB4 4194304
+
 void benchmark_mmap() {
-	size_t filesize = 1048576;
+	size_t filesize = MiB1;
 	__uint64_t start, end;
 	__uint64_t sum = 0;
-	const __uint64_t file_sum = ((256LL*1024 - 1)*(256*1024))/2;
+	__uint64_t  n_iters = filesize/4096;
+	const __uint64_t file_sum = ((n_iters*1024 - 1)*(n_iters*1024))/2;
 
 	asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 	for (int i = 0; i < 100; i++) {
 		int fd = open("/root/tmpfs/test2", O_RDONLY);
 
 		/* Prevent prefetching to make it more fair */
-		// madvise(ADDR, filesize, MADV_RANDOM);
+		//madvise((int *) ADDR, filesize, MADV_SEQUENTIAL);
 		
 		mmap(ADDR, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
 
-		for (int *curr= ADDR; curr < ADDR + filesize; curr++) {
+		for (int *curr= (int *) ADDR; curr < ADDR + filesize;
+		     curr++) {
+
 			sum += *curr;
 		}
 		
@@ -36,7 +46,7 @@ void benchmark_mmap() {
 
 	}
 	asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-	printf("%lu %lu\n", sum, 100 * file_sum);
+	//printf("%lu %lu\n", sum, 100 * file_sum);
 	assert(sum == 100 * file_sum);
 	printf("%ld\n", end - start);
 }

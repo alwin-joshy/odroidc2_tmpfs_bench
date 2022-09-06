@@ -1,0 +1,1 @@
+cmd_/root/benchmark/perf_module/perfcnt_enable.ko := ld -EL -r  -T /usr/src/linux/scripts/module-common.lds --build-id  -o /root/benchmark/perf_module/perfcnt_enable.ko /root/benchmark/perf_module/perfcnt_enable.o /root/benchmark/perf_module/perfcnt_enable.mod.o

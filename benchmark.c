@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <assert.h>
-
+#include <math.h>
 #define ADDR 0xB000000
 /*
 extern __inline unsigned long long __attribute__((__gnu_inline__, __always_inline__, __artificial__)) __rdtsc(void) {
@@ -24,31 +24,72 @@ void benchmark_mmap() {
 	__uint64_t sum = 0;
 	__uint64_t  n_iters = filesize/4096;
 	const __uint64_t file_sum = ((n_iters*1024 - 1)*(n_iters*1024))/2;
+	__uint64_t inner_sum = 0;
+	__uint64_t samples[100];
 
-	asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
+
 	for (int i = 0; i < 100; i++) {
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 		int fd = open("/root/tmpfs/test2", O_RDONLY);
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
 
 		/* Prevent prefetching to make it more fair */
-		//madvise((int *) ADDR, filesize, MADV_SEQUENTIAL);
 		
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 		mmap(ADDR, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
-
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
+		//inner_sum += end - start;
+		
+		posix_madvise((int *) ADDR, filesize, POSIX_MADV_RANDOM);
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 		for (int *curr= (int *) ADDR; curr < ADDR + filesize;
 		     curr++) {
 
 			sum += *curr;
 		}
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
+		//printf("Cost of touching all the pages: %lu\n", end - start);
+
+		inner_sum += end - start;
 		
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 		munmap(ADDR, filesize);
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
+		//inner_sum += end - start;
 
+		asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 		close(fd);
-
+		asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
+		//inner_sum += end - start;
+			
+		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
+		samples[i] = end - start;
 	}
-	asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-	//printf("%lu %lu\n", sum, 100 * file_sum);
 	assert(sum == 100 * file_sum);
-	printf("%ld\n", end - start);
+	
+	/* Calculate the mean */
+	__uint64_t mean = 0;
+	for (int i = 0; i < 100; i++) {
+		mean += samples[i];
+	}
+	
+	mean /= 100; 
+	printf("Mean = %lu\n", mean);
+
+	double std_dev = 0;
+	for (int i = 0; i < 100; i++) {
+		std_dev += pow((double) samples[i] - (double) mean, 2);
+		//printf("%lf %lf\n", std_dev, (double) samples[i] - (double) mean);
+	}
+
+	std_dev /= 100;
+	std_dev = sqrt(std_dev);
+
+	printf("std dev = %lf\n", std_dev);
+	//printf("%lu %lu\n", sum, 100 * file_sum);
+	//printf("Average cost of open was %d\n", inner_sum/100);
+	//printf("%ld\n", end - start);
 }
 
 

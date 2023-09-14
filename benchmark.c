@@ -18,78 +18,99 @@ extern __inline unsigned long long __attribute__((__gnu_inline__, __always_inlin
 #define MiB1 1048576
 #define MiB4 4194304
 
-void benchmark_mmap() {
-	size_t filesize = MiB1;
+#define NUM_TESTS 6
+#define NUM_SAMPLES 100
+
+#define BENCH_OPEN 0
+#define BENCH_MMAP 1
+#define BENCH_ITERATE 2
+#define BENCH_MUNMAP 3
+#define BENCH_CLOSE 4
+#define BENCH_FULL 5
+
+#define READ_CCNT(x) asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(x));
+
+/* Change this for different file sizes */
+#define FILE_SIZE MIB1
+#define N_ITERATION (FILESZ / 4096)
+#define FILE_SUM (((N_ITERATIONS * 1024 - 1)*(N_ITERATIONS * 1024))/2)
+
+const char *tests[NUM_TESTS] = {"open", "mmap", "iterate", "munmap", "close", "complete"};
+__uint64_t samples[NUM_TESTS][NUM_SAMPLES] = {0};
+
+__uint64_t cc_overhead(){
+	__uint64_t start, end = 0;
+	asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
+	asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
+	return end - start;
+}
+
+
+void benchmark_complete() {
 	__uint64_t start, end;
-	__uint64_t sum = 0;
-	__uint64_t  n_iters = filesize/4096;
-	const __uint64_t file_sum = ((n_iters*1024 - 1)*(n_iters*1024))/2;
-	__uint64_t inner_sum = 0;
-	__uint64_t samples[100];
-
-
-	for (int i = 0; i < 100; i++) {
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
+	for (int i = 0; i < NUM_SAMPLES; i++) {
+		READ_CCNT(start);
 		int fd = open("/root/tmpfs/test2", O_RDONLY);
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
 
 		/* Prevent prefetching to make it more fair */
+		mmap(ADDR, FILE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
 		
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
-		mmap(ADDR, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-		//inner_sum += end - start;
-		
-		posix_madvise((int *) ADDR, filesize, POSIX_MADV_RANDOM);
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
-		for (int *curr= (int *) ADDR; curr < ADDR + filesize;
+		//posix_madvise((int *) ADDR, filesize, POSIX_MADV_RANDOM);
+		for (int *curr= (int *) ADDR; curr < ADDR + FILE_SIZE;
 		     curr++) {
 
 			sum += *curr;
 		}
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-		//printf("Cost of touching all the pages: %lu\n", end - start);
-
-		inner_sum += end - start;
 		
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
-		munmap(ADDR, filesize);
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-		//inner_sum += end - start;
+		munmap(ADDR, FILE_SIZE);
 
-		asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(start));
 		close(fd);
-		asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-		//inner_sum += end - start;
-			
-		//asm volatile("mrs %0, PMCCNTR_EL0" : "=r"(end));
-		samples[i] = end - start;
-	}
-	assert(sum == 100 * file_sum);
-	
-	/* Calculate the mean */
-	__uint64_t mean = 0;
-	for (int i = 0; i < 100; i++) {
-		mean += samples[i];
-	}
-	
-	mean /= 100; 
-	printf("Mean = %lu\n", mean);
 
-	double std_dev = 0;
-	for (int i = 0; i < 100; i++) {
-		std_dev += pow((double) samples[i] - (double) mean, 2);
-		//printf("%lf %lf\n", std_dev, (double) samples[i] - (double) mean);
+		READ_CCNT(end);
+		samples[BENCH_COMPLETE][i] = end - start;
 	}
+	assert(sum == 100 * FILE_SUM);
 
-	std_dev /= 100;
-	std_dev = sqrt(std_dev);
+}
 
-	printf("std dev = %lf\n", std_dev);
-	//printf("%lu %lu\n", sum, 100 * file_sum);
-	//printf("Average cost of open was %d\n", inner_sum/100);
-	//printf("%ld\n", end - start);
+void benchmark_component() {
+	__uint64_t start_inner, end_inner;
+	__uint64_t sum = 0;
+
+	for (int i = 0; i < NUM_SAMPLES; i++) {
+		READ_CCNT(start_inner);
+		int fd = open("/root/tmpfs/test2", O_RDONLY);
+		READ_CCNT(end_inner);
+		samples[BENCH_OPEN][i] = end_inner - start_inner;
+
+		/* Prevent prefetching to make it more fair */
+		
+		READ_CCNT(start_inner);
+		mmap(ADDR, FILE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
+		READ_CCNT(end_inner);
+		samples[BENCH_MMAP][i] = end_inner - start_inner;
+		
+		//posix_madvise((int *) ADDR, filesize, POSIX_MADV_RANDOM);
+		READ_CCNT(start_inner);
+		for (int *curr= (int *) ADDR; curr < ADDR + FILE_SIZE;
+		     curr++) {
+
+			sum += *curr;
+		}
+		READ_CCNT(end_inner);
+		samples[BENCH_ITERATE][i] = end_inner - start_inner;
+		
+		READ_CCNT(start_inner);
+		munmap(ADDR, FILE_SIZE);
+		READ_CCNT(end_inner);
+		samples[BENCH_MUNMAP][i] = end_inner - start_inner;
+
+		READ_CCNT(start_inner);
+		close(fd);
+		READ_CCNT(end_inner);
+		samples[BENCH_MUNMAP][i] = end_inner - start_inner;
+	}
+	assert(sum == 100 * FILE_SUM);
 }
 
 
@@ -127,6 +148,21 @@ int main(void) {
 	printf("%x\n", value);
 	asm volatile ("msr PMCNTENSET_EL0, %0" :: "r"(value));
 
-	printf("hi\n");
-	benchmark_mmap();
+	/* Do the benchmark */
+	benchmark_component();
+	benchmark_full();
+
+	/* Output the results */
+	printf("## BEGIN benchmark results ##\n");
+	
+	for (int i = 0; i < NUM_TESTS; i++) {
+		printf("Benchmark: %s\n", benchmarks[i]);
+		for (int j = 0; j < NUM_SAMPLES; j++) {
+			printf("%lu,", samples[i][j]);
+		}
+		printf("\n");
+	}
+
+	printf("## END benchmark results ##\n");
+
 }

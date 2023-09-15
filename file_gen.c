@@ -8,10 +8,11 @@
 #define KiB256 64
 #define MiB1 256
 #define MiB4 1024
+#define MiB100 (MiB1 * 100)
 
 int main() {
         int buf[1024];
-        int fd = open("/root/tmpfs/test2", O_RDWR | O_CREAT | O_TRUNC);
+        int fd = open("/tmp/test2", O_RDWR | O_CREAT | O_TRUNC);
         for (int i =0; i < MiB1; i++) {
                 for (int j = 0; j < 1024; j++) {
                         buf[j] = i * 1024 + j;

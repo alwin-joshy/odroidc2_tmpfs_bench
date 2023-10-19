@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <math.h>
+#include <errno.h>
 #define ADDR  ((int *) 0xB000000)
 /*
 extern __inline unsigned long long __attribute__((__gnu_inline__, __always_inline__, __artificial__)) __rdtsc(void) {
@@ -21,6 +22,7 @@ extern __inline unsigned long long __attribute__((__gnu_inline__, __always_inlin
 
 #define NUM_TESTS 6
 #define NUM_SAMPLES 100
+//#define NUM_SAMPLES 1
 
 #define BENCH_OPEN 0
 #define BENCH_MMAP 1
@@ -75,7 +77,7 @@ void benchmark_complete() {
 		READ_CCNT(end);
 		samples[BENCH_COMPLETE][i] = end - start;
 	}
-	assert(sum == 100 * FILE_SUM);
+	assert(sum == NUM_SAMPLES * FILE_SUM);
 
 }
 
@@ -86,28 +88,28 @@ void benchmark_component() {
 	for (int i = 0; i < NUM_SAMPLES; i++) {
 		READ_CCNT(start_inner);
 		int fd = open("/tmp/test2", O_RDONLY);
-		if (!fd) {
-			printf("Open failed\n");
+		if (fd == -1) {
+			printf("Open failed %d\n", errno);
 			return;
 		}
 		READ_CCNT(end_inner);
 		samples[BENCH_OPEN][i] = end_inner - start_inner;
 		/* Prevent prefetching to make it more fair */
 		
+
 		READ_CCNT(start_inner);
-		mmap(ADDR, FILE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
+		void * addr = mmap(ADDR, FILE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
 		READ_CCNT(end_inner);
 		samples[BENCH_MMAP][i] = end_inner - start_inner;
 		//posix_madvise((int *) ADDR, filesize, POSIX_MADV_RANDOM);
 		READ_CCNT(start_inner);
 		for (int *curr= ADDR; curr < (char *) ADDR + FILE_SIZE;
 		     curr++) {
-			
 			sum += *curr;
 		}
 		READ_CCNT(end_inner);
 		samples[BENCH_ITERATE][i] = end_inner - start_inner;
-		
+
 		READ_CCNT(start_inner);
 		munmap(ADDR, FILE_SIZE);
 		READ_CCNT(end_inner);
@@ -118,7 +120,7 @@ void benchmark_component() {
 		READ_CCNT(end_inner);
 		samples[BENCH_CLOSE][i] = end_inner - start_inner;
 	}
-	assert(sum == 100 * (__uint64_t) FILE_SUM);
+	assert(sum == NUM_SAMPLES * (__uint64_t) FILE_SUM);
 }
 
 
@@ -156,16 +158,14 @@ int main(void) {
 	printf("%x\n", value);
 	asm volatile ("msr PMCNTENSET_EL0, %0" :: "r"(value));
 	
-	printf("1\n");
 	/* Do the benchmark */
 	benchmark_component();
-	printf("2\n");
 	benchmark_complete();
-	printf("3\n");
 
 	/* Output the results */
 	printf("## BEGIN benchmark results ##\n");
 	
+		
 	for (int i = 0; i < NUM_TESTS; i++) {
 		printf("Benchmark: %s\n", benchmarks[i]);
 		for (int j = 0; j < NUM_SAMPLES; j++) {

@@ -1,7 +1,7 @@
 
 obj-m += perfcnt_enable.o
 
-TEST := "6.1.53-current-meson64"
+TEST := "6.1.50-current-meson64"
 
 all:
 	make -C /lib/modules/$(TEST)/build M=$(PWD) modules
